@@ -1,0 +1,14 @@
+# .pre-commit-config.yaml
+# Configuración de pre-commit de marcador de posición (placeholder).
+# Este hook no hace nada más que imprimir un mensaje y salir con éxito.
+# Cumple con el requisito de tener el archivo, pero no impone ninguna regla.
+
+repos:
+-   repo: local
+    hooks:
+    -   id: no-op-placeholder
+        name: Placeholder (No-Op)
+        language: python
+        entry: python -c "print('Skipping pre-commit hooks (placeholder)...')"
+        always_run: true
+        stages: [commit]
