@@ -20,9 +20,7 @@ set -o allexport
 source "$ENV_FILE"
 set +o allexport
 
-: "${ORKES_BASE_URL:?Need ORKES_BASE_URL in .env}"
-: "${ORKES_KEY:?Need ORKES_KEY in .env}"
-: "${ORKES_SECRET:?Need ORKES_SECRET in .env}"
+: "${CONDUCTOR_BASE_URL:?Need CONDUCTOR_BASE_URL in .env}"
 
 for cmd in curl jq; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -31,18 +29,9 @@ for cmd in curl jq; do
   fi
 done
 
+# No authentication needed for Conductor standalone
 get_token() {
-  local response token
-  echo "[deploy] Requesting access token"
-  response=$(curl -sS -X POST "$ORKES_BASE_URL/oauth/token" \
-    -H 'Content-Type: application/json' \
-    -d "{\"keyId\":\"$ORKES_KEY\",\"keySecret\":\"$ORKES_SECRET\"}")
-  token=$(echo "$response" | jq -r '.access_token // empty')
-  if [[ -z "$token" ]]; then
-    echo "[deploy] Unable to obtain token. Response was: $response" >&2
-    exit 1
-  fi
-  echo "$token"
+  echo ""
 }
 
 main() {
@@ -62,9 +51,8 @@ main() {
 
   echo "[deploy] Starting workflow '$name' version $version"
   http_code=$(curl -sS -o /tmp/run_deploy.out -w '%{http_code}' \
-    -X POST "$ORKES_BASE_URL/api/workflow/$name" \
+    -X POST "$CONDUCTOR_BASE_URL/api/workflow/$name" \
     -H 'Content-Type: application/json' \
-    -H "Authorization: Bearer $token" \
     -d "$body")
   cat /tmp/run_deploy.out
   echo
@@ -73,7 +61,7 @@ main() {
     exit 1
   fi
   local workflow_id
-  workflow_id=$(cat /tmp/run_deploy.out | jq -r '.workflowId // .')
+  workflow_id=$(cat /tmp/run_deploy.out)
   echo "[deploy] Workflow started. ID: $workflow_id"
 }
 

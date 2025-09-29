@@ -1,184 +1,306 @@
 # Orkes / Conductor Deployment Pipeline PoC
 
-Esta Prueba de Concepto muestra cómo registrar y ejecutar dos workflows sencillos en Orkes/Netflix Conductor utilizando únicamente tareas de LOG, WAIT y HTTP contra un worker mock. El objetivo es tener un entorno reproducible en minutos para demostrar:
+Esta Prueba de Concepto muestra cómo registrar y ejecutar workflows avanzados de despliegue en Orkes/Netflix Conductor utilizando tareas HTTP contra un worker mock. El objetivo es tener un entorno reproducible en minutos para demostrar:
 
-1. `deploy_simple_v1`: un flujo de deploy con logs, espera y tres llamadas HTTP.
-2. `pipeline_simple_v1`: un pipeline que lanza múltiples deploys en paralelo por waves reutilizando el workflow anterior.
+1. **`deploy_simple_v1`**: Un flujo de deploy completo con infraestructura, cambio de tráfico, verificación y acciones de finalización/rollback.
+2. **`pipeline_simple_v1`**: Un pipeline que lanza múltiples deploys en paralelo por waves.
+3. **`finalize_deployment_v1`**: Workflow para finalizar despliegues exitosos.
+4. **`rollback_deployment_v1`**: Workflow para hacer rollback de despliegues fallidos.
 
-La carpeta está pensada para funcionar tanto con Orkes Cloud como con una instalación self-hosted compatible con las APIs REST actuales.
+La carpeta está configurada para funcionar con Conductor standalone (sin autenticación) o con Orkes Cloud.
 
 ## 1. Prerrequisitos (5 minutos)
 
-* Acceso a un endpoint de Orkes/Conductor (`ORKES_BASE_URL`) y credenciales válidas (`ORKES_KEY`, `ORKES_SECRET`).
-* Docker y Docker Compose **o** Python 3.11+ con `pip` (para ejecutar el worker sin contenedores).
+* **Docker y Docker Compose** para ejecutar Conductor standalone y el worker mock.
+* **Conductor standalone** ejecutándose en `localhost:8080` (ver sección 2).
 * Herramientas de línea de comando: `bash`, `curl`, `jq`, `python3`.
-* Opcional pero recomendado: acceso a la UI de Orkes/Conductor para visualizar los workflows.
 
-## 2. Configuración (1 minuto)
+### Opcional: Orkes Cloud
+Si prefieres usar Orkes Cloud en lugar de Conductor standalone:
+* Acceso a un endpoint de Orkes (`ORKES_BASE_URL`) y credenciales válidas (`ORKES_KEY`, `ORKES_SECRET`).
 
-1. Copia el archivo de ejemplo y completa tus valores:
+## 2. Configuración (2 minutos)
 
-   ```bash
-   cp .env.sample .env
-   # edita .env con tu editor favorito
-   ```
+### 2.1 Levantar Conductor Standalone
 
-   Variables requeridas:
+```bash
+# Ejecutar Conductor standalone en un contenedor
+docker run -d --name conductor-standalone \
+  -p 8080:8080 \
+  conductoross/conductor-standalone:3.15.0
 
-   ```env
-   ORKES_BASE_URL=https://tu-instancia.orkes.io
-   ORKES_KEY=xxxx
-   ORKES_SECRET=yyyy
-   WORKER_BASE_URL=http://localhost:3000
-   ```
+# Verificar que esté funcionando
+curl -s http://localhost:8080/health | jq
+```
 
-2. (Opcional) Ajusta los payloads de `tasks/samples/deploy_input.json` y `tasks/samples/pipeline_input.json` para personalizar `scope`, `version`, `env` o el comportamiento de `continueOnFailure`.
+### 2.2 Configurar Variables de Entorno
 
-## 3. Levantar el worker mock (2-4 minutos)
+El archivo `.env` ya está configurado para Conductor standalone:
 
-El worker expone los endpoints `/provision`, `/traffic` y `/verify` y simplemente imprime la carga y responde `200`.
+```env
+# Conductor Standalone Configuration
+CONDUCTOR_BASE_URL=http://localhost:8080
+WORKER_BASE_URL=http://172.17.0.1:3000
 
-### Opción A: Docker Compose (recomendada)
+# No authentication needed for Conductor standalone
+```
+
+**Nota**: Si usas Orkes Cloud, edita `.env` con tus credenciales:
+```env
+ORKES_BASE_URL=https://tu-instancia.orkes.io
+ORKES_KEY=xxxx
+ORKES_SECRET=yyyy
+WORKER_BASE_URL=http://localhost:3000
+```
+
+## 3. Levantar el Worker Mock (2-3 minutos)
+
+El worker expone múltiples endpoints para simular un flujo completo de despliegue:
 
 ```bash
 cd worker
-docker compose up -d
+docker-compose up --build -d
 ```
 
-*Tiempo estimado: 2 minutos (la primera vez puede tardar más por la descarga de imágenes).* 
+**Endpoints disponibles:**
+- `/create_infrastructure` - Crear recursos de infraestructura
+- `/wait_infrastructure_created` - Esperar a que la infraestructura esté lista
+- `/swap_traffic` - Cambiar el tráfico a la nueva versión
+- `/effective_status` - Verificar el estado efectivo del despliegue
+- `/finalize_deployment` - Finalizar despliegue exitoso
+- `/rollback_deployment` - Hacer rollback de despliegue fallido
+- `/health` - Health check
 
-Verifica que responde:
+**Verificar que responde:**
+```bash
+curl -s http://localhost:3000/health | jq
+```
+
+## 4. Registrar Workflows y Task Definitions (1 minuto)
 
 ```bash
-curl -sS -X POST http://localhost:3000/provision \
-  -H 'Content-Type: application/json' \
-  -d '{"ping":true}' | jq
+./scripts/register.sh
 ```
 
-Para detenerlo:
+**Salida esperada:**
+- Mensajes `2xx` en las respuestas
+- Resumen con `[register] Done.`
+
+**Workflows registrados:**
+- `deploy_simple_v1` (v7) - Workflow principal de despliegue
+- `pipeline_simple_v1` (v3) - Pipeline con múltiples waves
+- `finalize_deployment_v1` (v1) - Finalización de despliegues exitosos
+- `rollback_deployment_v1` (v1) - Rollback de despliegues fallidos
+
+## 5. Ejecutar Pruebas (5-10 minutos)
+
+### 5.1 Prueba de Deploy con Rollback
 
 ```bash
-docker compose down
+# Ejecutar deploy que fallará (scope no empieza con "svc-")
+./scripts/run_deploy.sh
+
+# El workflow seguirá este flujo:
+# 1. create_infrastructure
+# 2. wait_infrastructure_created  
+# 3. swap_traffic
+# 4. effective_status (fallará)
+# 5. rollback_deployment
 ```
 
-### Opción B: Entorno local de Python (3-4 minutos)
+**Verificar logs del worker:**
+```bash
+cd worker && docker-compose logs --tail=20
+```
+
+### 5.2 Prueba de Deploy Exitoso
 
 ```bash
-cd worker
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -e .
-uvicorn src.server:app --reload --host 0.0.0.0 --port 3000
+# Crear input para deploy exitoso
+cat > tasks/samples/deploy_success_input.json << 'EOF'
+{
+  "name": "deploy_simple_v1",
+  "version": 7,
+  "input": {
+    "scope": "svc-success",
+    "version": "1.0.0",
+    "env": "staging"
+  }
+}
+EOF
+
+# Ejecutar deploy exitoso
+./scripts/run_deploy.sh tasks/samples/deploy_success_input.json
+
+# El workflow seguirá este flujo:
+# 1. create_infrastructure
+# 2. wait_infrastructure_created
+# 3. swap_traffic
+# 4. effective_status (éxito)
+# 5. finalize_deployment
 ```
 
-La API quedará escuchando en `http://localhost:3000`.
-
-## 4. Registrar definiciones (1 minuto)
-
-El script registra los taskdefs HTTP y ambos workflows. Internamente reemplaza el placeholder `__WORKER_BASE_URL__` con el valor de `WORKER_BASE_URL` de tu `.env`.
+### 5.3 Prueba de Pipeline
 
 ```bash
-bash scripts/register.sh
+# Ejecutar pipeline con múltiples waves
+./scripts/run_pipeline.sh
+
+# El pipeline ejecutará:
+# - Wave 1: deploy_simple_v1 para "service-a" y "service-b" en paralelo
+# - Wave 2: deploy_simple_v1 para "service-b" en paralelo
 ```
 
-Salida esperada:
+## 6. Monitorear Ejecuciones
 
-* Mensajes `2xx` en las respuestas impresas.
-* Un resumen con `[register] Done.`
+### 6.1 Ver Estado de Workflows
 
-## 5. Ejecutar `deploy_simple_v1` (1-2 minutos)
+```bash
+# Listar workflows registrados
+curl -s http://localhost:8080/api/metadata/workflow | jq '.[].name'
 
-1. Revisa el payload de ejemplo (`tasks/samples/deploy_input.json`).
-2. Lanza el workflow:
+# Ver estado de un workflow específico (reemplaza WORKFLOW_ID)
+curl -s "http://localhost:8080/api/workflow/WORKFLOW_ID" | jq '.status'
 
-   ```bash
-   bash scripts/run_deploy.sh
-   ```
+# Ver detalles completos
+curl -s "http://localhost:8080/api/workflow/WORKFLOW_ID" | jq '.'
+```
 
-   El script mostrará el `workflowId` generado, por ejemplo `deploy_simple_v1_2024-...`.
+### 6.2 UI de Conductor (Opcional)
 
-3. Consulta el estado (puedes ejecutar este comando varias veces):
+Abre `http://localhost:8080` en tu navegador para ver:
+- Workflows registrados
+- Ejecuciones en tiempo real
+- Diagramas de flujo
+- Logs detallados
 
-   ```bash
-   bash scripts/status.sh <workflowId>
-   ```
+## 7. Flujo de Trabajo Detallado
 
-4. Abre la UI de Orkes/Conductor → `Executions` → busca el `workflowId` → revisa el diagrama para ver los pasos `LOG`, `WAIT` y `HTTP`. En la consola del worker deberías ver mensajes `[WORKER] {"step": ... }` para cada llamada.
+### 7.1 Workflow de Deploy (`deploy_simple_v1`)
 
-## 6. Ejecutar `pipeline_simple_v1` (2-3 minutos)
+```mermaid
+graph TD
+    A[create_infrastructure] --> B[wait_infrastructure_created]
+    B --> C[swap_traffic]
+    C --> D[effective_status]
+    D --> E{¿Éxito?}
+    E -->|Sí| F[finalize_deployment]
+    E -->|No| G[rollback_deployment]
+    F --> H[Completado]
+    G --> I[Completado]
+```
 
-1. Revisa `tasks/samples/pipeline_input.json`:
-   * `deployments`: lista de objetos con `scope`, `version`, `env`.
-   * `waves`: array de waves; cada wave ejecuta en paralelo los `scope` listados.
-   * `continueOnFailure`: controla si el pipeline termina al primer fallo (`false`) o continúa (`true`).
+### 7.2 Workflow de Finalización (`finalize_deployment_v1`)
 
-2. Lanza la ejecución:
+```mermaid
+graph TD
+    A[cleanup_old_resources] --> B[update_monitoring]
+    B --> C[notify_success]
+    C --> D[Completado]
+```
 
-   ```bash
-   bash scripts/run_pipeline.sh
-   ```
+### 7.3 Workflow de Rollback (`rollback_deployment_v1`)
 
-   Guarda el `workflowId` impreso.
+```mermaid
+graph TD
+    A[restore_previous_traffic] --> B[cleanup_failed_resources]
+    B --> C[notify_failure]
+    C --> D[Completado]
+```
 
-3. Verifica el estado:
+## 8. Personalización
 
-   ```bash
-   bash scripts/status.sh <workflowId>
-   ```
+### 8.1 Modificar Lógica de Decisión
 
-4. En la UI deberías observar dos waves: la primera con `svc-a` y `svc-b` ejecutándose en paralelo (cada una como sub-workflow `deploy_simple_v1`), seguida de la segunda wave con `svc-c`. La consola del worker mostrará las tres secuencias de `/provision`, `/traffic`, `/verify`.
+Edita `worker/src/server.py` en la función `effective_status`:
 
-## 7. Errores comunes y soluciones rápidas
+```python
+# Cambiar la lógica de éxito/fallo
+scope = payload.get("scope", "")
+success = scope and scope.startswith("svc-")  # Actual lógica
+# success = scope == "mi-servicio-especial"  # Nueva lógica
+```
+
+### 8.2 Agregar Nuevos Pasos
+
+1. **Agregar endpoint en el worker:**
+```python
+@app.post("/mi_nuevo_paso")
+async def mi_nuevo_paso(request: Request) -> Dict[str, Any]:
+    payload = await request.json()
+    response = _log_step("mi_nuevo_paso", payload)
+    return response
+```
+
+2. **Agregar task definition en `tasks/taskdefs.json`**
+3. **Agregar tarea en el workflow**
+4. **Reconstruir y registrar:**
+```bash
+cd worker && docker-compose up --build -d
+cd .. && ./scripts/register.sh
+```
+
+## 9. Solución de Problemas
 
 | Problema | Síntoma | Solución |
-| --- | --- | --- |
-| Credenciales inválidas | `401` o `403` al llamar a las APIs | Revisa `ORKES_KEY` y `ORKES_SECRET`. Genera una nueva pareja si es necesario. |
-| Worker caído | `curl: (7) Failed to connect` o tareas HTTP en `FAILED` | Asegúrate de que el worker esté corriendo y que `WORKER_BASE_URL` sea correcto. |
-| Timeout en tareas HTTP | Workflow se queda en `IN_PROGRESS` en `http_*` | Verifica conectividad local o aumenta los `timeoutSeconds` en `tasks/taskdefs.json`. |
-| CORS/UI | La UI del orquestador no carga datos | Accede vía VPN/HTTPS correcto o usa la CLI (`scripts/status.sh`). |
+|----------|---------|----------|
+| Worker no responde | `Connection refused` | Verificar que el worker esté ejecutándose: `docker-compose ps` |
+| Conductor no accede al worker | `NoHttpResponseException` | Verificar IP en `.env`: `WORKER_BASE_URL=http://172.17.0.1:3000` |
+| Workflow falla en SWITCH | `evaluatorType field is required` | Verificar que el workflow tenga `evaluatorType: "javascript"` |
+| Variables no se resuelven | `scope: None` en logs | Verificar sintaxis de variables: `${workflow.input.scope}` |
 
-## 8. Limpieza (opcional, <1 minuto)
+## 10. Limpieza
 
 ```bash
-bash scripts/cleanup.sh
+# Detener worker
+cd worker && docker-compose down
+
+# Detener Conductor
+docker stop conductor-standalone
+docker rm conductor-standalone
+
+# Limpiar workflows (opcional)
+./scripts/cleanup.sh
 ```
 
-El script intenta eliminar los workflows y taskdefs registrados. Los errores se ignoran para facilitar la limpieza.
-
-## 9. Cómo extender (ideas rápidas)
-
-* **Agregar una nueva tarea HTTP:** duplica una definición en `tasks/taskdefs.json`, actualiza la URI en el workflow, re-registra y ejecútalo.
-* **Aprobar waves manualmente:** reemplaza `wait_between` en `deploy_simple_v1` por una tarea `WAIT` más larga o un `USER_TASK` para simular un “manual gate”.
-* **Cambiar políticas de reintento:** edita `retryCount`, `retryDelaySeconds` o `timeoutSeconds` en las definiciones de tareas HTTP y vuelve a ejecutar `scripts/register.sh`.
-* **Más waves:** edita `workflows/pipeline_simple_v1.json` para añadir bloques `wave_3`, `wave_4`, etc. Siguiendo el patrón existente podrás cubrir más grupos de despliegues.
-
-## 10. Estructura del repositorio
+## 11. Estructura del Repositorio
 
 ```
 .
-├─ .env.sample
-├─ README.md
+├─ .env                          # Configuración (ya creado)
+├─ README.md                     # Este archivo
 ├─ scripts/
-│  ├─ register.sh
-│  ├─ run_deploy.sh
-│  ├─ run_pipeline.sh
-│  ├─ status.sh
-│  └─ cleanup.sh
+│  ├─ register.sh               # Registrar workflows y task definitions
+│  ├─ run_deploy.sh             # Ejecutar workflow de deploy
+│  ├─ run_pipeline.sh           # Ejecutar pipeline
+│  └─ status.sh                 # Ver estado de workflows
 ├─ tasks/
-│  ├─ taskdefs.json
+│  ├─ taskdefs.json             # Definiciones de tareas HTTP
 │  └─ samples/
-│     ├─ deploy_input.json
-│     └─ pipeline_input.json
+│     ├─ deploy_input.json      # Input para deploy
+│     ├─ deploy_success_input.json # Input para deploy exitoso
+│     └─ pipeline_input.json    # Input para pipeline
 ├─ workflows/
-│  ├─ deploy_simple_v1.json
-│  └─ pipeline_simple_v1.json
+│  ├─ deploy_simple_v1.json     # Workflow principal de deploy
+│  ├─ pipeline_simple_v1.json   # Pipeline con waves
+│  ├─ finalize_deployment_v1.json # Finalización de despliegues
+│  └─ rollback_deployment_v1.json # Rollback de despliegues
 └─ worker/
    ├─ Dockerfile
    ├─ docker-compose.yml
    ├─ pyproject.toml
    └─ src/
-      └─ server.py
+      └─ server.py              # Worker con todos los endpoints
 ```
 
-> Tiempo total estimado end-to-end: **10-15 minutos** (incluyendo descarga de imágenes y revisión en la UI).
+## 12. Tiempo Total Estimado
+
+- **Configuración inicial**: 5-7 minutos
+- **Primera ejecución**: 2-3 minutos
+- **Ejecuciones posteriores**: 30 segundos
+
+**Total end-to-end**: **7-10 minutos** para tener un sistema completo de despliegue con infraestructura, cambio de tráfico, verificación y rollback automático.
+
+---
+
+> **Nota**: Esta PoC demuestra un flujo completo de despliegue con toma de decisiones automática basada en el estado del servicio. El worker simula todas las operaciones de infraestructura, pero en un entorno real se conectaría con APIs de AWS, Azure, GCP, etc.

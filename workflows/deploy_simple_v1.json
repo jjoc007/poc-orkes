@@ -1,32 +1,24 @@
 {
   "name": "deploy_simple_v1",
-  "description": "Minimal deploy workflow with logging, waits, and mock HTTP calls",
-  "version": 1,
+  "description": "Enhanced deploy workflow with infrastructure, traffic swap, and finalize/rollback",
+  "version": 7,
   "schemaVersion": 2,
   "restartable": true,
   "ownerEmail": "devnull@example.com",
   "tasks": [
     {
-      "name": "log_start",
-      "taskReferenceName": "log_start",
-      "type": "LOG",
-      "inputParameters": {
-        "message": "inicio deploy ${workflow.input.scope} ${workflow.input.version} (${workflow.input.env})"
-      }
-    },
-    {
-      "name": "http_provision",
-      "taskReferenceName": "http_provision",
+      "name": "http_create_infrastructure",
+      "taskReferenceName": "http_create_infrastructure",
       "type": "HTTP",
       "inputParameters": {
-        "task": "http_provision",
+        "task": "http_create_infrastructure",
         "http_request": {
           "method": "POST",
-          "uri": "__WORKER_BASE_URL__/provision",
+          "uri": "__WORKER_BASE_URL__/create_infrastructure",
           "accept": "application/json",
           "contentType": "application/json",
           "body": {
-            "step": "provision",
+            "step": "create_infrastructure",
             "scope": "${workflow.input.scope}",
             "version": "${workflow.input.version}",
             "env": "${workflow.input.env}"
@@ -35,26 +27,26 @@
       }
     },
     {
-      "name": "wait_between",
-      "taskReferenceName": "wait_between",
+      "name": "wait_infrastructure_created",
+      "taskReferenceName": "wait_infrastructure_created",
       "type": "WAIT",
       "inputParameters": {
-        "duration": "PT3S"
+        "duration": "5s"
       }
     },
     {
-      "name": "http_traffic",
-      "taskReferenceName": "http_traffic",
+      "name": "http_wait_infrastructure_created",
+      "taskReferenceName": "http_wait_infrastructure_created",
       "type": "HTTP",
       "inputParameters": {
-        "task": "http_traffic",
+        "task": "http_wait_infrastructure_created",
         "http_request": {
           "method": "POST",
-          "uri": "__WORKER_BASE_URL__/traffic",
+          "uri": "__WORKER_BASE_URL__/wait_infrastructure_created",
           "accept": "application/json",
           "contentType": "application/json",
           "body": {
-            "step": "traffic",
+            "step": "wait_infrastructure_created",
             "scope": "${workflow.input.scope}",
             "version": "${workflow.input.version}",
             "env": "${workflow.input.env}"
@@ -63,18 +55,18 @@
       }
     },
     {
-      "name": "http_verify",
-      "taskReferenceName": "http_verify",
+      "name": "http_swap_traffic",
+      "taskReferenceName": "http_swap_traffic",
       "type": "HTTP",
       "inputParameters": {
-        "task": "http_verify",
+        "task": "http_swap_traffic",
         "http_request": {
           "method": "POST",
-          "uri": "__WORKER_BASE_URL__/verify",
+          "uri": "__WORKER_BASE_URL__/swap_traffic",
           "accept": "application/json",
           "contentType": "application/json",
           "body": {
-            "step": "verify",
+            "step": "swap_traffic",
             "scope": "${workflow.input.scope}",
             "version": "${workflow.input.version}",
             "env": "${workflow.input.env}"
@@ -83,20 +75,91 @@
       }
     },
     {
-      "name": "log_end",
-      "taskReferenceName": "log_end",
-      "type": "LOG",
+      "name": "http_effective_status",
+      "taskReferenceName": "http_effective_status",
+      "type": "HTTP",
       "inputParameters": {
-        "message": "fin deploy ${workflow.input.scope} ${workflow.input.version} (${workflow.input.env})"
+        "task": "http_effective_status",
+        "http_request": {
+          "method": "POST",
+          "uri": "__WORKER_BASE_URL__/effective_status",
+          "accept": "application/json",
+          "contentType": "application/json",
+          "body": {
+            "step": "effective_status",
+            "scope": "${workflow.input.scope}",
+            "version": "${workflow.input.version}",
+            "env": "${workflow.input.env}"
+          }
+        }
       }
+    },
+    {
+      "name": "deployment_decision",
+      "taskReferenceName": "deployment_decision",
+      "type": "SWITCH",
+      "evaluatorType": "javascript",
+      "expression": "if ('${http_effective_status.output.response.body.success}' == 'true') { 'finalize' } else { 'rollback' }",
+      "decisionCases": {
+        "finalize": [
+          {
+            "name": "http_finalize_deployment",
+            "taskReferenceName": "http_finalize_deployment",
+            "type": "HTTP",
+            "inputParameters": {
+              "task": "http_finalize_deployment",
+              "http_request": {
+                "method": "POST",
+                "uri": "__WORKER_BASE_URL__/finalize_deployment",
+                "accept": "application/json",
+                "contentType": "application/json",
+                "body": {
+                  "step": "finalize_deployment",
+                  "scope": "${workflow.input.scope}",
+                  "version": "${workflow.input.version}",
+                  "env": "${workflow.input.env}",
+                  "status": "success"
+                }
+              }
+            }
+          }
+        ],
+        "rollback": [
+          {
+            "name": "http_rollback_deployment",
+            "taskReferenceName": "http_rollback_deployment",
+            "type": "HTTP",
+            "inputParameters": {
+              "task": "http_rollback_deployment",
+              "http_request": {
+                "method": "POST",
+                "uri": "__WORKER_BASE_URL__/rollback_deployment",
+                "accept": "application/json",
+                "contentType": "application/json",
+                "body": {
+                  "step": "rollback_deployment",
+                  "scope": "${workflow.input.scope}",
+                  "version": "${workflow.input.version}",
+                  "env": "${workflow.input.env}",
+                  "status": "failed"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "defaultCase": []
     }
   ],
   "outputParameters": {
     "scope": "${workflow.input.scope}",
     "version": "${workflow.input.version}",
     "env": "${workflow.input.env}",
-    "provision": "${http_provision.output.response.body}",
-    "traffic": "${http_traffic.output.response.body}",
-    "verify": "${http_verify.output.response.body}"
+    "infrastructure": "${http_create_infrastructure.output.response.body}",
+    "infrastructure_ready": "${http_wait_infrastructure_created.output.response.body}",
+    "traffic_swapped": "${http_swap_traffic.output.response.body}",
+    "effective_status": "${http_effective_status.output.response.body}",
+    "finalization": "${http_finalize_deployment.output.response.body}",
+    "rollback": "${http_rollback_deployment.output.response.body}"
   }
 }

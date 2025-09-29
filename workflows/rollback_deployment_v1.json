@@ -1,0 +1,83 @@
+{
+  "name": "rollback_deployment_v1",
+  "description": "Rollback failed deployment workflow",
+  "version": 1,
+  "schemaVersion": 2,
+  "restartable": true,
+  "ownerEmail": "devnull@example.com",
+  "tasks": [
+    {
+      "name": "http_restore_previous_traffic",
+      "taskReferenceName": "http_restore_previous_traffic",
+      "type": "HTTP",
+      "inputParameters": {
+        "task": "http_restore_previous_traffic",
+        "http_request": {
+          "method": "POST",
+          "uri": "__WORKER_BASE_URL__/restore_previous_traffic",
+          "accept": "application/json",
+          "contentType": "application/json",
+          "body": {
+            "step": "restore_previous_traffic",
+            "scope": "${workflow.input.scope}",
+            "version": "${workflow.input.version}",
+            "env": "${workflow.input.env}",
+            "previous_version": "${workflow.input.previous_version}"
+          }
+        }
+      }
+    },
+    {
+      "name": "http_cleanup_failed_resources",
+      "taskReferenceName": "http_cleanup_failed_resources",
+      "type": "HTTP",
+      "inputParameters": {
+        "task": "http_cleanup_failed_resources",
+        "http_request": {
+          "method": "POST",
+          "uri": "__WORKER_BASE_URL__/cleanup_failed_resources",
+          "accept": "application/json",
+          "contentType": "application/json",
+          "body": {
+            "step": "cleanup_failed_resources",
+            "scope": "${workflow.input.scope}",
+            "version": "${workflow.input.version}",
+            "env": "${workflow.input.env}",
+            "failure_reason": "${workflow.input.failure_reason}"
+          }
+        }
+      }
+    },
+    {
+      "name": "http_notify_failure",
+      "taskReferenceName": "http_notify_failure",
+      "type": "HTTP",
+      "inputParameters": {
+        "task": "http_notify_failure",
+        "http_request": {
+          "method": "POST",
+          "uri": "__WORKER_BASE_URL__/notify_failure",
+          "accept": "application/json",
+          "contentType": "application/json",
+          "body": {
+            "step": "notify_failure",
+            "scope": "${workflow.input.scope}",
+            "version": "${workflow.input.version}",
+            "env": "${workflow.input.env}",
+            "deployment_id": "${workflow.input.deployment_id}",
+            "failure_reason": "${workflow.input.failure_reason}"
+          }
+        }
+      }
+    }
+  ],
+  "outputParameters": {
+    "scope": "${workflow.input.scope}",
+    "version": "${workflow.input.version}",
+    "env": "${workflow.input.env}",
+    "traffic_restored": "${http_restore_previous_traffic.output.response.body}",
+    "cleanup": "${http_cleanup_failed_resources.output.response.body}",
+    "notification": "${http_notify_failure.output.response.body}",
+    "status": "rolled_back"
+  }
+}

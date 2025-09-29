@@ -1,113 +1,58 @@
 {
   "name": "pipeline_simple_v1",
-  "description": "Orchestrates multiple deploys in waves using the deploy_simple_v1 sub-workflow",
-  "version": 1,
+  "description": "Simple pipeline workflow for Conductor standalone",
+  "version": 3,
   "schemaVersion": 2,
   "restartable": true,
   "ownerEmail": "devnull@example.com",
   "tasks": [
     {
-      "name": "log_pipeline_start",
-      "taskReferenceName": "log_pipeline_start",
-      "type": "LOG",
-      "inputParameters": {
-        "message": "Inicio pipeline con ${workflow.input.deployments.length()} deployments y ${workflow.input.waves.length()} waves"
-      }
-    },
-    {
-      "name": "prepare_waves",
-      "taskReferenceName": "prepare_waves",
-      "type": "INLINE",
-      "inputParameters": {
-        "scriptExpression": "function script(input) {\n  const deployments = Array.isArray(input.deployments) ? input.deployments : [];\n  const waves = Array.isArray(input.waves) ? input.waves : [];\n  const continueOnFailure = input.continueOnFailure === true;\n  const map = {};\n  deployments.forEach((d) => { if (d && d.scope) { map[d.scope] = d; } });\n  const normalized = [];\n  const targetWaves = Math.max(waves.length, 2);\n  for (let i = 0; i < targetWaves; i += 1) {\n    const scopes = Array.isArray(waves[i]) ? waves[i] : [];\n    const dynamicTasks = [];\n    const dynamicTasksInput = [];\n    scopes.forEach((scope) => {\n      const deployment = map[scope];\n      if (deployment) {\n        dynamicTasks.push({\n          name: 'deploy_simple_v1',\n          taskReferenceName: `deploy_${i}_${scope}`.replace(/[^a-zA-Z0-9_]/g, '_'),\n          type: 'SUB_WORKFLOW',\n          subWorkflowParam: { name: 'deploy_simple_v1', version: 1 }\n        });\n        dynamicTasksInput.push({\n          workflow: { input: deployment }\n        });\n      }\n    });\n    normalized.push({ index: i, scopes, dynamicTasks, dynamicTasksInput, continueOnFailure });\n  }\n  return { waves: normalized, continueOnFailure };\n}",
-        "deployments": "${workflow.input.deployments}",
-        "waves": "${workflow.input.waves}",
-        "continueOnFailure": "${workflow.input.continueOnFailure}"
-      }
-    },
-    {
-      "name": "wave_1",
-      "taskReferenceName": "wave_1",
-      "type": "FORK_JOIN_DYNAMIC",
-      "inputParameters": {
-        "dynamicTasks": "${prepare_waves.output.result.waves[0].dynamicTasks}",
-        "dynamicTasksInput": "${prepare_waves.output.result.waves[0].dynamicTasksInput}"
+      "name": "deploy_task_1",
+      "taskReferenceName": "deploy_task_1",
+      "type": "SUB_WORKFLOW",
+      "subWorkflowParam": {
+        "name": "deploy_simple_v1",
+        "version": 3
       },
-      "dynamicForkTasksParam": "dynamicTasks",
-      "dynamicForkTasksInputParamName": "dynamicTasksInput"
-    },
-    {
-      "name": "wave_1_log",
-      "taskReferenceName": "wave_1_log",
-      "type": "LOG",
       "inputParameters": {
-        "message": "Wave 1 completada para: ${prepare_waves.output.result.waves[0].scopes}"
-      }
-    },
-    {
-      "name": "wave_2",
-      "taskReferenceName": "wave_2",
-      "type": "FORK_JOIN_DYNAMIC",
-      "inputParameters": {
-        "dynamicTasks": "${prepare_waves.output.result.waves[1].dynamicTasks}",
-        "dynamicTasksInput": "${prepare_waves.output.result.waves[1].dynamicTasksInput}"
-      },
-      "optional": true,
-      "dynamicForkTasksParam": "dynamicTasks",
-      "dynamicForkTasksInputParamName": "dynamicTasksInput"
-    },
-    {
-      "name": "wave_2_log",
-      "taskReferenceName": "wave_2_log",
-      "type": "LOG",
-      "optional": true,
-      "inputParameters": {
-        "message": "Wave 2 completada para: ${prepare_waves.output.result.waves[1].scopes}"
-      }
-    },
-    {
-      "name": "wave_failure_check",
-      "taskReferenceName": "wave_failure_check",
-      "type": "SWITCH",
-      "caseExpression": "if ('${prepare_waves.output.result.continueOnFailure}' == 'true') { 'skip' } else if ('${wave_1.output.status}' == 'FAILED' || '${wave_2.output.status}' == 'FAILED') { 'terminate' } else { 'ok' }",
-      "decisionCases": {
-        "terminate": [
-          {
-            "name": "terminate_on_failure",
-            "taskReferenceName": "terminate_on_failure",
-            "type": "TERMINATE",
-            "inputParameters": {
-              "terminationStatus": "FAILED",
-              "workflowOutput": {
-                "message": "Pipeline detenido por fallo en wave",
-                "wave1Status": "${wave_1.output.status}",
-                "wave2Status": "${wave_2.output.status}"
-              }
-            }
+        "workflow": {
+          "input": {
+            "scope": "service-a",
+            "version": "v1.0.0",
+            "env": "staging"
           }
-        ],
-        "skip": []
-      },
-      "defaultCase": []
+        }
+      }
     },
     {
-      "name": "log_pipeline_end",
-      "taskReferenceName": "log_pipeline_end",
-      "type": "LOG",
+      "name": "wait_between_deploys",
+      "taskReferenceName": "wait_between_deploys",
+      "type": "WAIT",
       "inputParameters": {
-        "message": "Pipeline completado"
+        "duration": "2s"
+      }
+    },
+    {
+      "name": "deploy_task_2",
+      "taskReferenceName": "deploy_task_2",
+      "type": "SUB_WORKFLOW",
+      "subWorkflowParam": {
+        "name": "deploy_simple_v1",
+        "version": 3
+      },
+      "inputParameters": {
+        "workflow": {
+          "input": {
+            "scope": "service-b",
+            "version": "v1.0.0",
+            "env": "staging"
+          }
+        }
       }
     }
   ],
   "outputParameters": {
-    "waves": "${prepare_waves.output.result.waves}",
-    "wave1": {
-      "status": "${wave_1.output.status}",
-      "tasks": "${wave_1.output.tasks}"
-    },
-    "wave2": {
-      "status": "${wave_2.output.status}",
-      "tasks": "${wave_2.output.tasks}"
-    }
+    "deploy1": "${deploy_task_1.output}",
+    "deploy2": "${deploy_task_2.output}"
   }
 }

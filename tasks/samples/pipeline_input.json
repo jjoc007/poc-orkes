@@ -1,6 +1,6 @@
 {
   "name": "pipeline_simple_v1",
-  "version": 1,
+  "version": 3,
   "input": {
     "deployments": [
       {"scope": "svc-a", "version": "1.0.0", "env": "staging"},

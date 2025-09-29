@@ -14,9 +14,7 @@ set -o allexport
 source "$ENV_FILE"
 set +o allexport
 
-: "${ORKES_BASE_URL:?Need ORKES_BASE_URL in .env}"
-: "${ORKES_KEY:?Need ORKES_KEY in .env}"
-: "${ORKES_SECRET:?Need ORKES_SECRET in .env}"
+: "${CONDUCTOR_BASE_URL:?Need CONDUCTOR_BASE_URL in .env}"
 : "${WORKER_BASE_URL:?Need WORKER_BASE_URL in .env}"
 
 for cmd in curl jq python3; do
@@ -26,18 +24,9 @@ for cmd in curl jq python3; do
   fi
 done
 
+# No authentication needed for Conductor standalone
 get_token() {
-  local response token
-  echo "[register] Requesting access token from $ORKES_BASE_URL"
-  response=$(curl -sS -X POST "$ORKES_BASE_URL/oauth/token" \
-    -H 'Content-Type: application/json' \
-    -d "{\"keyId\":\"$ORKES_KEY\",\"keySecret\":\"$ORKES_SECRET\"}")
-  token=$(echo "$response" | jq -r '.access_token // empty')
-  if [[ -z "$token" ]]; then
-    echo "[register] Unable to obtain token. Response was: $response" >&2
-    exit 1
-  fi
-  echo "$token"
+  echo ""
 }
 
 render_with_worker() {
@@ -54,27 +43,26 @@ PY
 }
 
 register_taskdefs() {
-  local token=$1
   echo "[register] Registering task definitions"
   local payload
   payload=$(cat "$ROOT_DIR/tasks/taskdefs.json")
   local http_code
   http_code=$(curl -sS -o /tmp/register_taskdefs.out -w '%{http_code}' \
-    -X POST "$ORKES_BASE_URL/api/metadata/taskdefs" \
+    -X POST "$CONDUCTOR_BASE_URL/api/metadata/taskdefs" \
     -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $token" \
     -d "$payload")
   cat /tmp/register_taskdefs.out
   echo
-  if [[ $http_code != 2* ]]; then
+  if [[ $http_code == 409 ]]; then
+    echo "[register] Task definitions already exist, skipping..."
+  elif [[ $http_code != 2* ]]; then
     echo "[register] Failed to register task definitions (HTTP $http_code)" >&2
     exit 1
   fi
 }
 
 register_workflow() {
-  local token=$1
-  local file=$2
+  local file=$1
   local name
   name=$(basename "$file")
   echo "[register] Registering workflow from $name"
@@ -82,24 +70,25 @@ register_workflow() {
   rendered=$(render_with_worker "$file")
   local http_code
   http_code=$(curl -sS -o /tmp/register_workflow.out -w '%{http_code}' \
-    -X POST "$ORKES_BASE_URL/api/metadata/workflow" \
+    -X POST "$CONDUCTOR_BASE_URL/api/metadata/workflow" \
     -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $token" \
-    -d "[$rendered]")
+    -d "$rendered")
   cat /tmp/register_workflow.out
   echo
-  if [[ $http_code != 2* ]]; then
+  if [[ $http_code == 409 ]]; then
+    echo "[register] Workflow $name already exists, skipping..."
+  elif [[ $http_code != 2* ]]; then
     echo "[register] Failed to register workflow $name (HTTP $http_code)" >&2
     exit 1
   fi
 }
 
 main() {
-  local token
-  token=$(get_token)
-  register_taskdefs "$token"
-  register_workflow "$token" "$ROOT_DIR/workflows/deploy_simple_v1.json"
-  register_workflow "$token" "$ROOT_DIR/workflows/pipeline_simple_v1.json"
+  register_taskdefs
+  register_workflow "$ROOT_DIR/workflows/deploy_simple_v1.json"
+  register_workflow "$ROOT_DIR/workflows/pipeline_simple_v1.json"
+  register_workflow "$ROOT_DIR/workflows/finalize_deployment_v1.json"
+  register_workflow "$ROOT_DIR/workflows/rollback_deployment_v1.json"
   echo "[register] Done."
 }
 

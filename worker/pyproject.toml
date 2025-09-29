@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Mock HTTP worker for Orkes PoC"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
 authors = [{name = "PoC"}]
 dependencies = [
   "fastapi>=0.110",

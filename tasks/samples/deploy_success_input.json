@@ -2,7 +2,7 @@
   "name": "deploy_simple_v1",
   "version": 7,
   "input": {
-    "scope": "svc-a",
+    "scope": "svc-success",
     "version": "1.0.0",
     "env": "staging"
   }
