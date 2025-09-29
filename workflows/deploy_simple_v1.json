@@ -1,0 +1,102 @@
+{
+  "name": "deploy_simple_v1",
+  "description": "Minimal deploy workflow with logging, waits, and mock HTTP calls",
+  "version": 1,
+  "schemaVersion": 2,
+  "restartable": true,
+  "ownerEmail": "devnull@example.com",
+  "tasks": [
+    {
+      "name": "log_start",
+      "taskReferenceName": "log_start",
+      "type": "LOG",
+      "inputParameters": {
+        "message": "inicio deploy ${workflow.input.scope} ${workflow.input.version} (${workflow.input.env})"
+      }
+    },
+    {
+      "name": "http_provision",
+      "taskReferenceName": "http_provision",
+      "type": "HTTP",
+      "inputParameters": {
+        "task": "http_provision",
+        "http_request": {
+          "method": "POST",
+          "uri": "__WORKER_BASE_URL__/provision",
+          "accept": "application/json",
+          "contentType": "application/json",
+          "body": {
+            "step": "provision",
+            "scope": "${workflow.input.scope}",
+            "version": "${workflow.input.version}",
+            "env": "${workflow.input.env}"
+          }
+        }
+      }
+    },
+    {
+      "name": "wait_between",
+      "taskReferenceName": "wait_between",
+      "type": "WAIT",
+      "inputParameters": {
+        "duration": "PT3S"
+      }
+    },
+    {
+      "name": "http_traffic",
+      "taskReferenceName": "http_traffic",
+      "type": "HTTP",
+      "inputParameters": {
+        "task": "http_traffic",
+        "http_request": {
+          "method": "POST",
+          "uri": "__WORKER_BASE_URL__/traffic",
+          "accept": "application/json",
+          "contentType": "application/json",
+          "body": {
+            "step": "traffic",
+            "scope": "${workflow.input.scope}",
+            "version": "${workflow.input.version}",
+            "env": "${workflow.input.env}"
+          }
+        }
+      }
+    },
+    {
+      "name": "http_verify",
+      "taskReferenceName": "http_verify",
+      "type": "HTTP",
+      "inputParameters": {
+        "task": "http_verify",
+        "http_request": {
+          "method": "POST",
+          "uri": "__WORKER_BASE_URL__/verify",
+          "accept": "application/json",
+          "contentType": "application/json",
+          "body": {
+            "step": "verify",
+            "scope": "${workflow.input.scope}",
+            "version": "${workflow.input.version}",
+            "env": "${workflow.input.env}"
+          }
+        }
+      }
+    },
+    {
+      "name": "log_end",
+      "taskReferenceName": "log_end",
+      "type": "LOG",
+      "inputParameters": {
+        "message": "fin deploy ${workflow.input.scope} ${workflow.input.version} (${workflow.input.env})"
+      }
+    }
+  ],
+  "outputParameters": {
+    "scope": "${workflow.input.scope}",
+    "version": "${workflow.input.version}",
+    "env": "${workflow.input.env}",
+    "provision": "${http_provision.output.response.body}",
+    "traffic": "${http_traffic.output.response.body}",
+    "verify": "${http_verify.output.response.body}"
+  }
+}

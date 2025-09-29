@@ -1,0 +1,41 @@
+[
+  {
+    "name": "http_provision",
+    "description": "Mock provision call against the local worker",
+    "ownerEmail": "devnull@example.com",
+    "retryCount": 3,
+    "retryLogic": "EXPONENTIAL_BACKOFF",
+    "retryDelaySeconds": 2,
+    "timeoutSeconds": 30,
+    "responseTimeoutSeconds": 10,
+    "timeoutPolicy": "TIME_OUT_WF",
+    "retryDelayFactor": 2,
+    "type": "HTTP"
+  },
+  {
+    "name": "http_traffic",
+    "description": "Mock traffic shift call against the local worker",
+    "ownerEmail": "devnull@example.com",
+    "retryCount": 3,
+    "retryLogic": "EXPONENTIAL_BACKOFF",
+    "retryDelaySeconds": 2,
+    "timeoutSeconds": 30,
+    "responseTimeoutSeconds": 10,
+    "timeoutPolicy": "TIME_OUT_WF",
+    "retryDelayFactor": 2,
+    "type": "HTTP"
+  },
+  {
+    "name": "http_verify",
+    "description": "Mock verification call against the local worker",
+    "ownerEmail": "devnull@example.com",
+    "retryCount": 3,
+    "retryLogic": "EXPONENTIAL_BACKOFF",
+    "retryDelaySeconds": 2,
+    "timeoutSeconds": 30,
+    "responseTimeoutSeconds": 10,
+    "timeoutPolicy": "TIME_OUT_WF",
+    "retryDelayFactor": 2,
+    "type": "HTTP"
+  }
+]
