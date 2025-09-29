@@ -1,0 +1,13 @@
+services:
+  mock-worker:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - UVICORN_WORKERS=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped

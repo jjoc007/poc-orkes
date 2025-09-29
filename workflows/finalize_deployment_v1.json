@@ -1,0 +1,81 @@
+{
+  "name": "finalize_deployment_v1",
+  "description": "Finalize successful deployment workflow",
+  "version": 1,
+  "schemaVersion": 2,
+  "restartable": true,
+  "ownerEmail": "devnull@example.com",
+  "tasks": [
+    {
+      "name": "http_cleanup_old_resources",
+      "taskReferenceName": "http_cleanup_old_resources",
+      "type": "HTTP",
+      "inputParameters": {
+        "task": "http_cleanup_old_resources",
+        "http_request": {
+          "method": "POST",
+          "uri": "__WORKER_BASE_URL__/cleanup_old_resources",
+          "accept": "application/json",
+          "contentType": "application/json",
+          "body": {
+            "step": "cleanup_old_resources",
+            "scope": "${workflow.input.scope}",
+            "version": "${workflow.input.version}",
+            "env": "${workflow.input.env}",
+            "previous_version": "${workflow.input.previous_version}"
+          }
+        }
+      }
+    },
+    {
+      "name": "http_update_monitoring",
+      "taskReferenceName": "http_update_monitoring",
+      "type": "HTTP",
+      "inputParameters": {
+        "task": "http_update_monitoring",
+        "http_request": {
+          "method": "POST",
+          "uri": "__WORKER_BASE_URL__/update_monitoring",
+          "accept": "application/json",
+          "contentType": "application/json",
+          "body": {
+            "step": "update_monitoring",
+            "scope": "${workflow.input.scope}",
+            "version": "${workflow.input.version}",
+            "env": "${workflow.input.env}"
+          }
+        }
+      }
+    },
+    {
+      "name": "http_notify_success",
+      "taskReferenceName": "http_notify_success",
+      "type": "HTTP",
+      "inputParameters": {
+        "task": "http_notify_success",
+        "http_request": {
+          "method": "POST",
+          "uri": "__WORKER_BASE_URL__/notify_success",
+          "accept": "application/json",
+          "contentType": "application/json",
+          "body": {
+            "step": "notify_success",
+            "scope": "${workflow.input.scope}",
+            "version": "${workflow.input.version}",
+            "env": "${workflow.input.env}",
+            "deployment_id": "${workflow.input.deployment_id}"
+          }
+        }
+      }
+    }
+  ],
+  "outputParameters": {
+    "scope": "${workflow.input.scope}",
+    "version": "${workflow.input.version}",
+    "env": "${workflow.input.env}",
+    "cleanup": "${http_cleanup_old_resources.output.response.body}",
+    "monitoring": "${http_update_monitoring.output.response.body}",
+    "notification": "${http_notify_success.output.response.body}",
+    "status": "finalized"
+  }
+}

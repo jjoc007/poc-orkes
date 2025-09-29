@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mock-worker"
+version = "0.1.0"
+description = "Mock HTTP worker for Orkes PoC"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{name = "PoC"}]
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.23"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["worker"]
+
+[tool.setuptools.package-data]
+worker = []

@@ -1,0 +1,16 @@
+{
+  "name": "pipeline_simple_v1",
+  "version": 3,
+  "input": {
+    "deployments": [
+      {"scope": "svc-a", "version": "1.0.0", "env": "staging"},
+      {"scope": "svc-b", "version": "2.3.4", "env": "staging"},
+      {"scope": "svc-c", "version": "9.9.9", "env": "production"}
+    ],
+    "waves": [
+      ["svc-a", "svc-b"],
+      ["svc-c"]
+    ],
+    "continueOnFailure": false
+  }
+}

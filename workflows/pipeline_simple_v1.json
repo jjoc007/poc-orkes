@@ -1,0 +1,58 @@
+{
+  "name": "pipeline_simple_v1",
+  "description": "Simple pipeline workflow for Conductor standalone",
+  "version": 3,
+  "schemaVersion": 2,
+  "restartable": true,
+  "ownerEmail": "devnull@example.com",
+  "tasks": [
+    {
+      "name": "deploy_task_1",
+      "taskReferenceName": "deploy_task_1",
+      "type": "SUB_WORKFLOW",
+      "subWorkflowParam": {
+        "name": "deploy_simple_v1",
+        "version": 3
+      },
+      "inputParameters": {
+        "workflow": {
+          "input": {
+            "scope": "service-a",
+            "version": "v1.0.0",
+            "env": "staging"
+          }
+        }
+      }
+    },
+    {
+      "name": "wait_between_deploys",
+      "taskReferenceName": "wait_between_deploys",
+      "type": "WAIT",
+      "inputParameters": {
+        "duration": "2s"
+      }
+    },
+    {
+      "name": "deploy_task_2",
+      "taskReferenceName": "deploy_task_2",
+      "type": "SUB_WORKFLOW",
+      "subWorkflowParam": {
+        "name": "deploy_simple_v1",
+        "version": 3
+      },
+      "inputParameters": {
+        "workflow": {
+          "input": {
+            "scope": "service-b",
+            "version": "v1.0.0",
+            "env": "staging"
+          }
+        }
+      }
+    }
+  ],
+  "outputParameters": {
+    "deploy1": "${deploy_task_1.output}",
+    "deploy2": "${deploy_task_2.output}"
+  }
+}
